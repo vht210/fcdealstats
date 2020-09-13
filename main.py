@@ -5,12 +5,14 @@ import time
 import  pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import datetime
 
 DEALS_URL="https://spacerace.filecoin.io/deals/"
 #Change to your minerid
-MINER_ID=["t01277","t01291"]
+#MINER_ID=["t01277","t01291"]
+MINER_ID=["t01291"]
 
-TOTAL_PAGE= 11
+TOTAL_PAGE= 7
 GROUP_FREQUENCY= '12H'
 
 async def asyncmain(url):
@@ -48,18 +50,53 @@ def get_urls():
 
 def get_retrieval_data(df,filter='retrieve',group_freq=GROUP_FREQUENCY):
     df_filter = df[df["Type"] == filter]
+    print(df_filter.head())
     df_filter["Success"] = (df_filter["Message"] == "success")
     df_gb = df_filter.groupby([pd.Grouper(key='Created',freq=group_freq),df_filter.Success]).size().reset_index(name='Count')
     df_success_count = df_gb[df_gb["Success"]== True]
+    success = df_success_count["Count"].sum()
     df_fail_count = df_gb[df_gb["Success"]== False]
+    fail = df_fail_count["Count"].sum()
+    percent = (success)/(success+fail)*100
+    print("Success: " + str(success) + ", fail: " + str(fail))
+    print("success rate " + str(percent))
     pd.concat({
         'RetrieveOK': df_success_count.set_index('Created').Count,
         'RetrieveFail': df_fail_count.set_index('Created').Count
     }, axis=1).plot.bar()
     plt.savefig('RetrieveData.png',bbox_inches='tight')
+
+def get_retrieval_between_time(df,start_time='2020-09-01 05:30:00-UTC' ,end_time='2020-09-01 07:30:00-UTC',filter_type='retrieve',filter_status='fail'):
+    """
+    Return data CID and timestamp
+    :param df:
+    :param start_time:
+    :param end_time:
+    :param filter_type:
+    :param filter_status:
+    :return:
+    """
+    start_time_dt = datetime.datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S-%Z')
+    end_time_dt = datetime.datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S-%Z')
+    df_filter = df[df["Type"] == filter_type]
+    df_filter.set_index("Created", inplace=False)
+    if filter_status == 'success':
+        df_filter = df_filter[df_filter["Message"] == "success"]
+    else:
+        df_filter = df_filter[df_filter["Message"] != "success"]
+    df_should_remove = (df_filter.loc[(df_filter["Created"]>=pd.to_datetime(start_time_dt).tz_localize('UTC'))&(df_filter["Created"]<=pd.to_datetime(end_time_dt).tz_localize('UTC'))])
+    print(df_should_remove[["Created","Data CID"]])
+    return df_should_remove[["Created", "Data CID"]]
+
 def main():
     df = web2df()
-    get_retrieval_data(df)
-
+    #get_retrieval_data(df)
+    start_time1 = '2020-09-01 05:30:00-UTC'
+    end_time1 = '2020-09-01 07:30:00-UTC'
+    df1= get_retrieval_between_time(df,start_time1,end_time1)
+    start_time2 = '2020-09-01 18:30:00-UTC'
+    end_time2 = '2020-09-01 20:30:00-UTC'
+    df2 = get_retrieval_between_time(df,start_time2,end_time2)
+    pd.concat([df1,df2]).to_csv(str(MINER_ID).replace("']","").replace("['","")+".csv")
 if __name__ == '__main__':
     main()
